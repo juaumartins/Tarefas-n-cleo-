@@ -1,0 +1,1 @@
+{"name":"tarefas-nucleo","version":"1.1.0","private":true,"dependencies":{"web-push":"3.6.7"},"engines":{"node":">=22"}}
