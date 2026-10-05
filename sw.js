@@ -4,7 +4,7 @@ self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 self.addEventListener('push',event=>{
   let data;try{data=event.data.json();}catch{return;}
   if(!/^[0-9a-f-]{36}$/i.test(data.taskId||''))return;
-  event.waitUntil(self.registration.showNotification('Nova tarefa na equipe',{
+  event.waitUntil(self.registration.showNotification('Tarefa da equipe',{
     body:String(data.body||'Uma tarefa foi adicionada.').slice(0,300),icon:'/icon-192.png',
     tag:'task-'+data.taskId,data:{taskId:data.taskId}
   }));

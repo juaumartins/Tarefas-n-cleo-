@@ -16,7 +16,7 @@ module.exports = async function(req,res) {
   const body=req.body;
   if(!body || !/^[0-9a-f-]{36}$/i.test(body.taskId||'') || typeof body.title!=='string' || body.title.length>300 || !Array.isArray(body.subscriptions) || body.subscriptions.length>100)return res.status(400).json({error:'Invalid payload'});
   webPush.setVapidDetails('https://tarefas-nucleo.vercel.app',process.env.PUSH_PUBLIC_KEY,process.env.PUSH_PRIVATE_KEY);
-  const payload=JSON.stringify({title:'Nova tarefa na equipe',body:body.title,taskId:body.taskId});
+  const payload=JSON.stringify({title:'Tarefa da equipe',body:body.title,taskId:body.taskId});
   const queue=body.subscriptions.slice();let sent=0,expired=0,failed=0;
   await Promise.all(Array.from({length:Math.min(queue.length,10)},async()=>{
     while(queue.length){const sub=queue.shift();
