@@ -1,19 +1,43 @@
 'use strict';
-let pushRegistration=null,pushConfiguration=null,pushBusy=false,pushOwner=null,pushSchemaReady=false;
+let pushRegistration=null,pushConfiguration=null,pushBusy=false,pushOwner=null,pushSchemaReady=false,pushLastError=null;
 const pushSupported=window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 function updatePushButton(){
  const b=$('push-toggle');b.hidden=!user;b.disabled=pushBusy||!pushConfiguration?.enabled||!pushSchemaReady||!pushSupported;
  b.textContent=pushBusy?'Aguarde…':pushOwner===user?.id?'Desativar notificações':'Ativar notificações';
  if(!user)return;
  $('push-help').hidden=false;
- $('push-status').textContent=!pushSupported?'Este navegador não oferece notificações. No iPhone, adicione o app à tela de início e abra por lá.':!pushConfiguration?.enabled?'As notificações aguardam a configuração do servidor.':!pushSchemaReady?'As notificações aguardam a configuração do Supabase.':pushOwner===user.id?'Notificações ativadas neste aparelho.':'Ative neste aparelho para receber os avisos enviados pela equipe.';
+ $('push-status').textContent=!pushSupported?'Este navegador não oferece notificações. No iPhone, adicione o app à tela de início e abra por lá.':!pushConfiguration?.enabled?'As notificações aguardam a configuração do servidor.':!pushSchemaReady?'As notificações aguardam a configuração do Supabase.':pushLastError?pushRegistrationError(pushLastError):pushOwner===user.id?'Notificações ativadas e cadastradas para '+user.email+'.':'Ative neste aparelho para receber os avisos enviados pela equipe. Conta: '+user.email+'.';
+}
+function pushRegistrationError(error){
+ const code=String(error?.code||error?.name||'');
+ if(code==='42501')return 'O banco recusou o cadastro deste aparelho. Sua conta precisa estar autorizada na equipe.';
+ if(['PGRST205','42P01'].includes(code))return 'Falta configurar a tabela de notificações no Supabase.';
+ if(code==='23505'||code==='subscription_account')return 'Este aparelho estava associado a outra conta. Ative novamente para cadastrar a conta atual.';
+ return 'Não foi possível confirmar o cadastro deste aparelho. Tente ativar novamente.'+(code?' Código: '+code:'');
 }
 async function savePushSubscription(subscription,owner){
- const data=subscription.toJSON();
- const {error}=await client.from('checklist_push_subscriptions').upsert({endpoint:data.endpoint,p256dh:data.keys.p256dh,auth:data.keys.auth,updated_at:new Date().toISOString()},{onConflict:'endpoint'});
- if(error)throw error;
+ if(user?.id!==owner)return;
+ const data=subscription.toJSON(),values={p256dh:data.keys.p256dh,auth:data.keys.auth,updated_at:new Date().toISOString()};
+ // endpoint e user_id sao imutaveis nas permissoes do banco.
+ // Upsert tentava atualizar endpoint, causando 42501 mesmo na primeira inscricao.
+ const existing=await client.from('checklist_push_subscriptions').select('id').eq('endpoint',data.endpoint).maybeSingle();
+ if(existing.error)throw existing.error;
+ if(user?.id!==owner)return;
+ let result;
+ if(existing.data){
+  result=await client.from('checklist_push_subscriptions').update(values).eq('id',existing.data.id).select('id').single();
+ }else{
+  result=await client.from('checklist_push_subscriptions').insert({endpoint:data.endpoint,...values}).select('id').single();
+  // Outro separador do mesmo navegador pode ter cadastrado durante a leitura.
+  if(result.error?.code==='23505'){
+   result=await client.from('checklist_push_subscriptions').update(values).eq('endpoint',data.endpoint).select('id').maybeSingle();
+   if(!result.error&&!result.data)throw {code:'subscription_account'};
+  }
+ }
+ if(result.error)throw result.error;
+ if(!result.data)throw {code:'subscription_account'};
  if(user?.id!==owner){await subscription.unsubscribe();return;}
- pushOwner=owner;
+ pushOwner=owner;pushLastError=null;
 }
 async function refreshPush(){
  pushSchemaReady=false;
@@ -24,7 +48,7 @@ async function refreshPush(){
  pushSchemaReady=!error;
  if(!error){
   const subscription=await pushRegistration.pushManager.getSubscription();
-  if(subscription){try{await savePushSubscription(subscription,owner);}catch{await subscription.unsubscribe();pushOwner=null;}}
+  if(subscription){try{await savePushSubscription(subscription,owner);}catch(error){pushOwner=null;pushLastError=error;}}else{pushOwner=null;pushLastError=null;}
  }
  updatePushButton();
 }
@@ -34,7 +58,7 @@ async function deactivatePush(){
   if(client&&user){const {error}=await client.from('checklist_push_subscriptions').delete().eq('endpoint',subscription.endpoint);if(error)throw error;}
   await subscription.unsubscribe();
  }
- pushOwner=null;updatePushButton();
+ pushOwner=null;pushLastError=null;updatePushButton();
 }
 $('push-toggle').onclick=async()=>{
  if(pushBusy||!user||!pushSchemaReady||!pushConfiguration?.enabled)return;
@@ -52,7 +76,7 @@ $('push-toggle').onclick=async()=>{
   const subscription=await pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
   try{await savePushSubscription(subscription,owner);}catch(e){await subscription.unsubscribe();throw e;}
   toast('Notificações ativadas neste aparelho.');
- }catch{toast('Não foi possível ativar as notificações. Confira a configuração do Supabase e tente novamente.');}
+ }catch(error){pushOwner=null;pushLastError=error;toast(pushRegistrationError(error));}
  finally{pushBusy=false;updatePushButton();}
 };
 async function initializePush(){
@@ -111,7 +135,7 @@ $('notify-send').onclick=async()=>{
    else $('notify-result').textContent='Não foi possível solicitar o envio. A tarefa continua salva. Tente novamente.';
    return;
   }
-  $('notify-result').textContent=Number(data)>0?'Envio solicitado para '+data+' aparelho(s). O recebimento depende da internet e das permissões de cada pessoa.':'Ninguém da equipe ativou notificações em outro aparelho. Nenhum aviso foi enviado.';
+  $('notify-result').textContent=Number(data)>0?'Envio solicitado para '+data+' aparelho(s). O recebimento depende da internet e das permissões de cada pessoa.':'Nenhum aparelho de outra conta está cadastrado para receber. Confira se os dois celulares usam e-mails diferentes e se o destinatário mostra “Notificações ativadas e cadastradas”. Nenhum aviso foi enviado.';
   // Impede repetir um envio bem-sucedido enquanto este diálogo estiver aberto.
   notifyTarget=null;
  }catch{$('notify-result').textContent='Não foi possível solicitar o envio. A tarefa continua salva. Confira a internet.';}
