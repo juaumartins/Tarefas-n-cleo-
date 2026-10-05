@@ -1,6 +1,8 @@
-# Avisos de novas tarefas
+# Avisos manuais de tarefas
 
-Cada pessoa entra com sua conta e toca em **Ativar notificações** no celular. Ao tocar no aviso, abre os detalhes da tarefa. O autor não recebe o próprio aviso. Sair desativa os avisos naquele navegador.
+Cada pessoa entra com sua conta e toca em **Ativar notificações** no celular. Criar a tarefa não dispara avisos. Depois de salvar, escolha **Enviar notificação** ou **Agora não**. Também é possível enviar pelo botão nos detalhes. Ao tocar no aviso, abre os detalhes da tarefa. Quem solicita o envio não recebe o próprio aviso. Sair desativa os avisos naquele navegador.
+
+Execute novamente setup-notificacoes.sql se usou a versão anterior: ele remove o disparo automático e habilita o botão manual.
 
 ## Configuração do administrador
 
@@ -20,7 +22,7 @@ select vault.create_secret(
 ```
 
 4. Na Vercel, faça Redeploy do último deploy para aplicar as variáveis.
-5. Entre em dois celulares com contas autorizadas. Ative os avisos no segundo. Crie uma tarefa no primeiro e confira o aviso no segundo, inclusive com o app fechado. Toque para abrir a tarefa.
+5. Entre em dois celulares com contas autorizadas. Ative os avisos no segundo. Crie uma tarefa no primeiro: nenhum aviso deve chegar. Toque em Enviar notificação e confira o aviso no segundo, inclusive com o app fechado. Toque para abrir a tarefa.
 
 Não publique os valores privados no GitHub. Não use anon ou service_role como segredo de envio. Para gerar suas próprias chaves, execute localmente `node gerar-chaves-notificacoes.cjs`. Guarde a saída somente para configurar Vercel e Vault.
 
@@ -29,7 +31,9 @@ Não publique os valores privados no GitHub. Não use anon ou service_role como 
 - Android: use um navegador compatível e permita notificações.
 - iPhone/iPad: adicione o site à tela de início e abra pelo ícone antes de ativar (iOS/iPadOS 16.4 ou posterior).
 - Os avisos dependem da internet, permissões e configurações do aparelho. São notificações do app; não são mensagens no WhatsApp.
-- Edições, conclusão e exclusão não geram avisos.
+- Criar, editar, concluir e excluir não gera avisos automaticamente.
+- Um aviso só é solicitado com o botão Enviar notificação.
+- Um intervalo mínimo de um minuto por tarefa impede cliques repetidos.
 - Sem configuração, as tarefas continuam funcionando e o envio fica inativo.
 - O envio usa pg_net de forma assíncrona. Não há garantia de entrega nem nova tentativa automática. Inscrições expiradas precisam ser reativadas no aparelho.
 

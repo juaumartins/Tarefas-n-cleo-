@@ -6,7 +6,7 @@ function updatePushButton(){
  b.textContent=pushBusy?'Aguarde…':pushOwner===user?.id?'Desativar notificações':'Ativar notificações';
  if(!user)return;
  $('push-help').hidden=false;
- $('push-status').textContent=!pushSupported?'Este navegador não oferece notificações. No iPhone, adicione o app à tela de início e abra por lá.':!pushConfiguration?.enabled?'As notificações aguardam a configuração do servidor.':!pushSchemaReady?'As notificações aguardam a configuração do Supabase.':pushOwner===user.id?'Notificações ativadas neste aparelho.':'Ative neste aparelho para receber avisos de novas tarefas da equipe.';
+ $('push-status').textContent=!pushSupported?'Este navegador não oferece notificações. No iPhone, adicione o app à tela de início e abra por lá.':!pushConfiguration?.enabled?'As notificações aguardam a configuração do servidor.':!pushSchemaReady?'As notificações aguardam a configuração do Supabase.':pushOwner===user.id?'Notificações ativadas neste aparelho.':'Ative neste aparelho para receber os avisos enviados pela equipe.';
 }
 async function savePushSubscription(subscription,owner){
  const data=subscription.toJSON();
@@ -84,3 +84,38 @@ loadTasks=async function(expected=epoch){
   if(task)await openTaskDetails(task);else toast('Esta tarefa não está disponível para sua conta.');
  }
 };
+
+let notifyTarget=null,notifySending=false;
+function openNotifyPrompt(task){
+ if(notifySending)return;
+ notifyTarget=task;$('notify-title').textContent=task.title;$('notify-result').textContent='';
+ $('notify-send').disabled=false;open('notify-dialog');
+}
+$('notify-task').onclick=()=>{if(detailTask&&user)openNotifyPrompt(detailTask);};
+$('notify-dialog').addEventListener('cancel',event=>{if(notifySending)event.preventDefault();});
+$('notify-send').onclick=async()=>{
+ if(notifySending||!notifyTarget||!user)return;
+ notifySending=true;$('notify-send').disabled=true;$('notify-result').textContent='Solicitando envio…';
+ const taskId=notifyTarget.id;
+ try{
+  const response=await fetch('/api/push-config',{cache:'no-store'});
+  const config=response.ok?await response.json():null;
+  if(!config?.enabled){$('notify-result').textContent='A tarefa está salva, mas falta configurar as chaves de envio na Vercel.';return;}
+  const {data,error}=await client.rpc('checklist_request_task_notification',{task_id:taskId});
+  if(error){
+   const message=String(error.message||'');
+   if(['PGRST202','42883'].includes(error.code))$('notify-result').textContent='A tarefa está salva. Execute a atualização de notificações manuais no Supabase para habilitar o botão.';
+   else if(message.includes('push_not_configured'))$('notify-result').textContent='Falta cadastrar o segredo de envio no Vault do Supabase.';
+   else if(message.includes('push_recently_requested'))$('notify-result').textContent='Um aviso para esta tarefa já foi solicitado no último minuto. Aguarde antes de reenviar.';
+   else if(error.code==='42501')$('notify-result').textContent='Sua conta não está autorizada a enviar avisos para esta equipe.';
+   else $('notify-result').textContent='Não foi possível solicitar o envio. A tarefa continua salva. Tente novamente.';
+   return;
+  }
+  $('notify-result').textContent=Number(data)>0?'Envio solicitado para '+data+' aparelho(s). O recebimento depende da internet e das permissões de cada pessoa.':'Ninguém da equipe ativou notificações em outro aparelho. Nenhum aviso foi enviado.';
+  // Impede repetir um envio bem-sucedido enquanto este diálogo estiver aberto.
+  notifyTarget=null;
+ }catch{$('notify-result').textContent='Não foi possível solicitar o envio. A tarefa continua salva. Confira a internet.';}
+ finally{notifySending=false;$('notify-send').disabled=!notifyTarget;}
+};
+
+for(const button of $('notify-dialog').querySelectorAll('.close'))button.onclick=()=>{if(!notifySending)$('notify-dialog').close();};
